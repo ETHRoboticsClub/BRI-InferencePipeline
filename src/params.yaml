@@ -1,0 +1,76 @@
+# BRI-InferencePipeline Centralized Configuration
+
+ble:
+  device_address: "DC:9C:FE:88:60:AC" # Physical Myo armband MAC (zx05)
+  discovery_timeout: 10.0             # Scan timeout in seconds
+  raw_mode: true                      # Raw unfiltered 8-channel int8 mode (0x01, 0x03, 0x03, 0x00, 0x00)
+
+preprocessing:
+  fs: 200                 # Sampling rate (Hz)
+  bandpass: [15, 95]      # 4th-order Butterworth bandpass cutoff frequencies (Hz)
+  notch: 50               # Power-line notch filter center frequency (Hz)
+  notch_q: 30             # Notch filter quality factor
+  butter_order: 4         # Butterworth filter order
+  channels: 8             # Number of EMG channels
+
+normalization:
+  enabled: true
+  mode: "adaptive"        # "adaptive", "fixed", or "none"
+  buffer_seconds: 5.0     # 5s rolling buffer for online standard deviation (1000 samples @ 200 Hz)
+  fixed_scale: 35.0       # Fallback scale factor for raw Myo int8 [-128, 127]
+  min_std: 1.0            # Noise floor threshold to prevent dividing by near-zero at quiet rest
+
+windowing:
+  sub_window: 60          # Sub-window length in samples (300 ms at 200 Hz)
+  step: 20                # Sub-window stride in samples (100 ms at 200 Hz, 10 Hz inference)
+  queue_len: 10           # Number of sub-windows in FIFO queue
+  total_window: 240       # Total samples in receptive field ((queue_len - 1) * step + sub_window)
+
+socket:
+  host: "127.0.0.1"
+  port: 5005
+
+model:
+  channels: 8
+  targets: 15
+  hidden: 64
+  weights_path: "models/best_model.pt"
+
+kinematics:
+  hand_side: "right"
+  mode: "linear"          # Default canonical mode for direct degree angles [70°-180°]
+  streaming_mode: "linear" # Mode used by StreamingInferenceWorker for TRR neural predictions [linear direct mapping]
+  smoothing_alpha: 0.35   # Low-pass EMA smoothing filter on UDP controls (eliminates 0/1 snapping)
+  headroom: 1.35          # Dynamic range expansion factor for smooth proportional analog response
+  curve: "smooth"         # "smooth" (Hermite cubic S-curve) or "proportional" (linear)
+  adaptive_ranging: true  # Leaky online tracking of user's personal min/max
+  adaptation_rate: 0.005  # Slow adaptation so held fists don't rapidly decay
+  empirical_bounds:
+    extension: [156.2, 167.7, 164.9, 152.3, 141.2, 171.2, 161.1, 133.3, 168.1, 147.8, 122.6, 165.3, 123.3, 134.3, 163.6]
+    flexion:   [155.6, 160.6, 155.3, 141.9, 126.3, 156.0, 146.8, 116.4, 152.6, 130.7, 106.9, 149.9, 106.0, 117.6, 149.4]
+  rest_angle_deg: 180.0
+  neutral_wrist:
+    wrj2: 0.750
+    wrj1: 0.588
+  neutral_abduction: 0.500
+  flex_ranges:
+    thumb_cmc: 60.0
+    thumb_mcp: 80.0
+    thumb_ip: 80.0
+    mcp: 90.0
+    pip: 110.0
+    dip: 90.0
+  tendon_weights:
+    pip: 0.6
+    dip: 0.4
+  actuator_scales:
+    thumb_thj5_base: 0.500
+    thumb_thj5_gain: 0.350
+    thumb_thj4_gain: 0.850
+    thumb_thj2_base: 0.500
+    thumb_thj2_gain: 0.450
+    thumb_thj1_base: 0.143
+    thumb_thj1_gain: 0.857
+    finger_mcp_base: 0.143
+    finger_mcp_gain: 0.857
+    little_lfj5_gain: 0.400
