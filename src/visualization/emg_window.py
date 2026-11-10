@@ -192,12 +192,24 @@ class EMGVisualizerApp:
             except Exception as exc:
                 logger.warning("UDPSender initialization skipped: %s", exc)
 
+        # Configure multi-band streaming if model was trained with 108 features
+        worker_params = None
+        dense_mod = getattr(self.model, "gru", None)
+        if dense_mod is not None and getattr(dense_mod, "dense", None) and dense_mod.dense[0].in_features == 108:
+            worker_params = {
+                "preprocessing": {
+                    "multi_band": True,
+                    "bands": [[15, 40], [40, 65], [65, 95]],
+                }
+            }
+
         # Initialize StreamingInferenceWorker
         try:
             self.worker: StreamingInferenceWorker | None = StreamingInferenceWorker(
                 ring_buffer=self.client.ring_buffer,
                 model=self.model,
                 udp_sender=self.udp_sender,
+                params=worker_params,
                 pace_loop=True,
             )
         except Exception as exc:

@@ -1,7 +1,7 @@
 """Command-Line Interface (CLI) runner for BRI Real-Time Inference Pipeline.
 
 Bridges 8-channel 200 Hz sEMG acquisition (BLE Myo armband or high-precision Mock replay),
-model-agnostic streaming inference at 10 Hz cadence, closed-form kinematic mapping,
+stateful TRR streaming inference engine at 10 Hz cadence, closed-form kinematic mapping,
 and binary UDP transmission to the MuJoCo Shadow Hand simulation viewer.
 """
 
@@ -294,6 +294,12 @@ def run_pipeline(args: argparse.Namespace) -> int:
     udp_sender = UDPSender(host=args.host, port=args.port)
 
     # 5. Initialize Streaming Worker
+    dense_mod = getattr(model, "gru", None)
+    if dense_mod is not None and getattr(dense_mod, "dense", None) and dense_mod.dense[0].in_features == 108:
+        config.setdefault("preprocessing", {})["multi_band"] = True
+        config["preprocessing"]["bands"] = [[15, 40], [40, 65], [65, 95]]
+        logger.info("Configured 3-band sub-Nyquist streaming pipeline (108 tangent features).")
+
     worker = StreamingInferenceWorker(
         ring_buffer=ring_buffer,
         model=model,
