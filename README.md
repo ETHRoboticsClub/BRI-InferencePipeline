@@ -1,8 +1,8 @@
-# BRI Inference Pipeline
+# BRI Inference Pipeline (SSM Decoder Branch)
 
-Model-agnostic real-time continuous sEMG finger kinematics inference pipeline and MuJoCo Shadow Hand simulator.
+Real-time continuous sEMG finger kinematics inference pipeline and MuJoCo Shadow Hand simulator powered by the Tangent-Space + Diagonal State-Space Model (SSM) decoder (`ssm` branch).
 
-The `main` branch provides the model-agnostic streaming, preprocessing, recording, visualization, and Shadow Hand simulation infrastructure. Specific model architectures live on dedicated branches (e.g., `intrasubject-gru-decoder`).
+The `main` branch remains model-agnostic (`BaseEMGModel`), while this `ssm` branch includes the trained `Model` (`src/model/model.py`, `src/model/ssm.py`, `src/model/kernelized.py`, `src/model/tangent_space.py`) and pretrained intrasubject Myo checkpoint (`models/best_model.pt`).
 
 ## Setup
 

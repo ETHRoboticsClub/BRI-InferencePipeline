@@ -35,7 +35,12 @@ logger = logging.getLogger("run_pipeline")
 
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "src" / "params.yaml"
 DEFAULT_WEIGHTS_PATH = PROJECT_ROOT / "models" / "best_model.pt"
-DEFAULT_DATA_PATH = PROJECT_ROOT.parent / "BRI-TrainingPipeline" / "data" / "raw" / "emg_fk" / "subject_01_trial_01.npz"
+DEFAULT_RECORDING_PATH = PROJECT_ROOT / "data" / "recordings" / "myo_intrasubject.npz"
+DEFAULT_DATA_PATH = (
+    DEFAULT_RECORDING_PATH
+    if DEFAULT_RECORDING_PATH.is_file()
+    else PROJECT_ROOT.parent / "BRI-TrainingPipeline" / "data" / "raw" / "emg_fk" / "subject_01_trial_01.npz"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -155,7 +160,7 @@ def load_config(config_path: pathlib.Path) -> dict[str, Any]:
     )
     return {
         "preprocessing": {"fs": 200, "bandpass": [15, 95], "notch": 50, "channels": 8},
-        "windowing": {"sub_window": 60, "step": 20, "queue_len": 10},
+        "windowing": {"sub_window": 60, "step": 20, "queue_len": 50},
         "socket": {"host": "127.0.0.1", "port": 5005},
         "model": {"channels": 8, "targets": 15, "hidden": 64},
     }
@@ -254,17 +259,22 @@ def run_pipeline(args: argparse.Namespace) -> int:
     notch = float(prep_cfg.get("notch", 50.0))
     sub_window = int(win_cfg.get("sub_window", 60))
     step = int(win_cfg.get("step", 20))
-    queue_len = int(win_cfg.get("queue_len", 10))
+    queue_len = int(win_cfg.get("queue_len", 50))
     targets = int(model_cfg.get("targets", 15))
     hidden = int(model_cfg.get("hidden", 64))
+    length = int(model_cfg.get("length", queue_len))
+    window_size = int(win_cfg.get("total_window", sub_window + (length - 1) * step))
 
     # 2. Initialize Model and load weights
     model = Model(
         channels=channels,
         targets=targets,
+        window_size=window_size,
+        length=length,
+        activation=str(model_cfg.get("activation", "relu")),
         hidden=hidden,
-        sub_window=sub_window,
-        step=step,
+        downsample=int(model_cfg.get("downsample", 1)),
+        ssm_speed=float(model_cfg.get("ssm_speed", 4.0)),
     )
 
     weights_path = pathlib.Path(args.weights).resolve()
@@ -290,7 +300,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     )
 
     # 4. Initialize Ring Buffer & UDP Sender
-    ring_buffer = EMGRingBuffer(capacity=2000, channels=channels)
+    ring_buffer = EMGRingBuffer(capacity=max(2000, model.window_size * 2), channels=channels)
     udp_sender = UDPSender(host=args.host, port=args.port)
 
     # 5. Initialize Streaming Worker
@@ -300,9 +310,10 @@ def run_pipeline(args: argparse.Namespace) -> int:
         preprocessor=preprocessor,
         udp_sender=udp_sender,
         params=config,
+        window_size=model.window_size,
         sub_window=sub_window,
         step=step,
-        queue_len=queue_len,
+        queue_len=model.length,
         fs=fs,
         cadence_hz=args.rate,
         pace_loop=True,

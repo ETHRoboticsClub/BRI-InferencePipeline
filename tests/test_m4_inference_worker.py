@@ -33,7 +33,7 @@ def test_worker_initialization_defaults_and_buffers(loaded_model: Model, ring_bu
     worker = StreamingInferenceWorker(ring_buffer=ring_buffer, model=loaded_model)
 
     assert worker.channels == 8
-    assert worker.window_size == 240
+    assert worker.window_size == 1040
     assert worker.step_size == 20
     assert worker.fs == 200
     assert worker.cadence_hz == 10.0
@@ -44,8 +44,8 @@ def test_worker_initialization_defaults_and_buffers(loaded_model: Model, ring_bu
     assert worker.latest_controls is None
     assert not worker.is_alive()
 
-    assert worker.raw_buffer.shape == (8, 240)
-    assert worker.filtered_buffer.shape == (8, 240)
+    assert worker.raw_buffer.shape == (8, 1040)
+    assert worker.filtered_buffer.shape == (8, 1040)
     assert np.all(worker.raw_buffer == 0.0)
     assert np.all(worker.filtered_buffer == 0.0)
 
@@ -100,11 +100,15 @@ def test_worker_accepts_custom_model_subclass(ring_buffer: EMGRingBuffer) -> Non
     np.testing.assert_allclose(res.angles, 90.0, atol=1e-4)
 
 
-def test_rolling_raw_buffer_and_filter_continuity(loaded_model: Model, ring_buffer: EMGRingBuffer) -> None:
+def test_rolling_raw_buffer_and_filter_continuity(ring_buffer: EMGRingBuffer) -> None:
+    class DummyModel(BaseEMGModel):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.full((x.shape[0], 15), 120.0, device=x.device)
+
     prep = Preprocess(fs=200, bandpass=[15, 95], notch=50, channels=8)
     worker = StreamingInferenceWorker(
         ring_buffer=ring_buffer,
-        model=loaded_model,
+        model=DummyModel(window_size=60),
         preprocessor=prep,
         window_size=60,
         step=20,
@@ -207,10 +211,10 @@ def test_end_to_end_streaming_mock_streamer_and_udp(loaded_model: Model, ring_bu
 
 def test_worker_warmup_and_reset(loaded_model: Model, ring_buffer: EMGRingBuffer) -> None:
     worker = StreamingInferenceWorker(ring_buffer=ring_buffer, model=loaded_model)
-    data = np.random.randn(8, 240).astype(np.float32)
+    data = np.random.randn(8, 1040).astype(np.float32)
     worker.warmup(initial_emg=data)
     assert worker.is_warmed_up
-    assert worker.steps_completed == 12
+    assert worker.steps_completed == 52
 
     worker.reset()
     assert worker.steps_completed == 0

@@ -14,17 +14,17 @@ preprocessing:
   channels: 8             # Number of EMG channels
 
 normalization:
-  enabled: true
-  mode: "adaptive"        # "adaptive", "fixed", or "none"
-  buffer_seconds: 5.0     # 5s rolling buffer for online standard deviation (1000 samples @ 200 Hz)
-  fixed_scale: 35.0       # Fallback scale factor for raw Myo int8 [-128, 127]
-  min_std: 1.0            # Noise floor threshold to prevent dividing by near-zero at quiet rest
+  enabled: false          # SSM checkpoint embeds training filtered (channel_mean, channel_std)
+  mode: "checkpoint"
+  buffer_seconds: 5.0
+  fixed_scale: 35.0
+  min_std: 1.0
 
 windowing:
   sub_window: 60          # Sub-window length in samples (300 ms at 200 Hz)
   step: 20                # Sub-window stride in samples (100 ms at 200 Hz, 10 Hz inference)
-  queue_len: 10           # Number of sub-windows in FIFO queue
-  total_window: 240       # Total samples in receptive field ((queue_len - 1) * step + sub_window)
+  queue_len: 50           # Number of tangent-space steps (k=5 * 10 steps)
+  total_window: 1040      # Total samples in receptive field ((queue_len - 1) * step + sub_window)
 
 socket:
   host: "127.0.0.1"
@@ -33,7 +33,12 @@ socket:
 model:
   channels: 8
   targets: 15
+  length: 50
+  k: 5
+  activation: "relu"
   hidden: 64
+  downsample: 1
+  ssm_speed: 4
   weights_path: "models/best_model.pt"
 
 kinematics:

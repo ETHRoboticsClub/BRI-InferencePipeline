@@ -164,7 +164,7 @@ class EMGVisualizerApp:
         self.root.after(50, self._update_loop)
 
     def _init_inference_engine(self, model_path: str | Path | None) -> None:
-        """Load pretrained TRR model and initialize streaming worker."""
+        """Load pretrained SSM model and initialize streaming worker."""
         self.model = Model(channels=8, targets=15)
         if model_path:
             path = Path(model_path)
@@ -198,6 +198,8 @@ class EMGVisualizerApp:
                 ring_buffer=self.client.ring_buffer,
                 model=self.model,
                 udp_sender=self.udp_sender,
+                window_size=self.model.window_size,
+                queue_len=self.model.length,
                 pace_loop=True,
             )
         except Exception as exc:

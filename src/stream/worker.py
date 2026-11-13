@@ -34,9 +34,17 @@ def _load_default_params(path: pathlib.Path = DEFAULT_PARAMS_PATH) -> dict[str, 
                 return data
     return {
         "preprocessing": {"fs": 200, "bandpass": [15, 95], "notch": 50, "channels": 8},
-        "windowing": {"window_size": 240, "sub_window": 60, "step": 20, "queue_len": 10},
+        "windowing": {"window_size": 1040, "sub_window": 60, "step": 20, "queue_len": 50},
         "socket": {"host": "127.0.0.1", "port": 5005},
-        "model": {"channels": 8, "targets": 15, "hidden": 64},
+        "model": {
+            "channels": 8,
+            "targets": 15,
+            "length": 50,
+            "activation": "relu",
+            "hidden": 64,
+            "downsample": 1,
+            "ssm_speed": 4,
+        },
     }
 
 
@@ -189,7 +197,7 @@ class StreamingInferenceWorker:
         pop_timeout: float = 0.25,
         step_callback: Callable[[StepResult], None] | None = None,
         device: str | torch.device = "cpu",
-        normalize_emg: bool = True,
+        normalize_emg: bool | None = None,
         channel_scale: float | Sequence[float] | np.ndarray | None = None,
     ) -> None:
         self.params = params if params is not None else _load_default_params()
@@ -242,13 +250,23 @@ class StreamingInferenceWorker:
                 channels=self.channels,
                 targets=int(model_cfg.get("targets", 15)),
                 window_size=self.window_size,
+                length=int(model_cfg["length"]) if "length" in model_cfg else None,
+                activation=str(model_cfg.get("activation", "relu")),
                 hidden=int(model_cfg.get("hidden", 64)),
+                downsample=int(model_cfg.get("downsample", 1)),
+                ssm_speed=float(model_cfg.get("ssm_speed", 4.0)),
             )
         self.model.to(self.device)
         self.model.eval()
 
         self.udp_sender = udp_sender
-        self.norm_enabled = bool(normalize_emg)
+        norm_cfg = self.params.get("normalization", {})
+        if normalize_emg is not None:
+            self.norm_enabled = bool(normalize_emg)
+        elif getattr(self.model, "handles_normalization", False):
+            self.norm_enabled = False
+        else:
+            self.norm_enabled = bool(norm_cfg.get("enabled", True))
         self.channel_offset: np.ndarray = np.zeros((self.channels, 1), dtype=np.float32)
         self._user_channel_scale: np.ndarray | None = None
         if channel_scale is not None:
@@ -319,7 +337,10 @@ class StreamingInferenceWorker:
         perm = np.roll(np.arange(self.channels, dtype=np.int64), -ext_pod)
         combined = np.concatenate([open_arr, fist_arr], axis=1)[perm]
         offset = np.mean(combined, axis=1, keepdims=True)
-        ch_std = np.maximum(np.std(combined - offset, axis=1, keepdims=True), 1.0)
+        if getattr(self.model, "handles_normalization", False):
+            ch_std = np.ones((self.channels, 1), dtype=np.float32)
+        else:
+            ch_std = np.maximum(np.std(combined - offset, axis=1, keepdims=True), 1.0)
 
         with self._state_lock:
             self.channel_perm = perm
